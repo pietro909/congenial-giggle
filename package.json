@@ -1,0 +1,46 @@
+{
+  "name": "arkade-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=22.12.0 <23",
+    "pnpm": ">=10.25.0 <11"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test:unit",
+    "lint": "pnpm -r lint",
+    "release": "bash scripts/release.sh all",
+    "release:ts-sdk": "bash scripts/release.sh ts-sdk",
+    "release:boltz-swap": "bash scripts/release.sh boltz-swap",
+    "regtest:up": "bash apps/regtest/up.sh",
+    "regtest:down": "bash apps/regtest/down.sh",
+    "regtest:reset": "bash apps/regtest/reset.sh",
+    "regtest:test": "pnpm -C packages/ts-sdk test:integration-docker && pnpm -C packages/boltz-swap test:integration"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@typescript-eslint/eslint-plugin": "^8.43.0",
+    "@typescript-eslint/parser": "^8.43.0",
+    "eslint": "^9.35.0",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": ">=0.25.0",
+      "brace-expansion": "^2.0.2",
+      "minimatch": "9.0.3"
+    },
+    "onlyBuiltDependencies": [
+      "canvas",
+      "sqlite3",
+      "@arkade-os/sdk"
+    ],
+    "ignoredBuiltDependencies": [
+      "canvas",
+      "esbuild"
+    ]
+  }
+}

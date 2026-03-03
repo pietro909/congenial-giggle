@@ -1,0 +1,11 @@
+/// <reference types="vitest" />
+import { defineConfig, mergeConfig } from "vitest/config";
+import base from "../../config/vitest.base";
+
+export default defineConfig(
+  mergeConfig(base, {
+    test: {
+      setupFiles: ["./test/setup.ts"],
+    },
+  }),
+);
