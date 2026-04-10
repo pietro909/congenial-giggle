@@ -8,7 +8,7 @@ TypeScript packages for the Arkade Bitcoin wallet ecosystem — on-chain/off-cha
 |---------|-------------|
 | [`@arkade-os/sdk`](packages/ts-sdk/) | Bitcoin wallet SDK with Taproot and Ark protocol support |
 | [`@arkade-os/boltz-swap`](packages/boltz-swap/) | Lightning and chain swaps using Boltz |
-| [Regtest stack](apps/regtest/) | Docker Compose stack for integration testing |
+| [Regtest stack](regtest/) | Shared regtest environment ([arkade-regtest](https://github.com/ArkLabsHQ/arkade-regtest) submodule) |
 
 ## Prerequisites
 
@@ -17,6 +17,7 @@ TypeScript packages for the Arkade Bitcoin wallet ecosystem — on-chain/off-cha
 
 ```bash
 corepack enable
+git submodule update --init
 pnpm install
 ```
 
@@ -40,11 +41,10 @@ pnpm -C packages/ts-sdk vitest run -t "test name pattern"
 
 ### Integration tests
 
-Integration tests require [nigiri](https://github.com/vulpemventures/nigiri) and the regtest Docker stack:
+Integration tests use the shared [arkade-regtest](https://github.com/ArkLabsHQ/arkade-regtest) environment (git submodule):
 
 ```bash
-nigiri start --ln
-pnpm run regtest:up      # Start arkd, boltz, LND, nbxplorer, etc.
+pnpm run regtest:up      # Start nigiri + arkd, boltz, LND, fulmine, etc.
 pnpm run regtest:test    # Run e2e tests for all packages
 pnpm run regtest:down    # Stop the stack
 pnpm run regtest:reset   # Stop and remove volumes
