@@ -42,11 +42,11 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
-      - name: Unit tests
-        run: pnpm test
-
       - name: Build
         run: pnpm run build
+
+      - name: Unit tests
+        run: pnpm test
 
   integration:
     name: Integration Tests
