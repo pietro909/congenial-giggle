@@ -9,9 +9,9 @@ cleanup() {
     git checkout package.json
     
     # Remove local tag if it exists
-    if git tag | grep -q "v$CURRENT_VERSION"; then
-        git tag -d "v$CURRENT_VERSION"
-        echo "✓ Removed local git tag v$CURRENT_VERSION"
+    if git tag | grep -q "boltz-swap-v$CURRENT_VERSION"; then
+        git tag -d "boltz-swap-v$CURRENT_VERSION"
+        echo "✓ Removed local git tag boltz-swap-v$CURRENT_VERSION"
     fi
     
     echo "✨ Cleanup complete"
@@ -116,7 +116,7 @@ if [ "$DRY_RUN" = true ]; then
         echo "Would create new version: $NEW_VERSION"
     fi
     
-    echo "Would create git tag: v$NEW_VERSION"
+    echo "Would create git tag: boltz-swap-v$NEW_VERSION"
     
     # Show npm publish command that would be used
     if [[ "$NEW_VERSION" == *-* ]]; then
@@ -162,20 +162,14 @@ else
     NEW_VERSION=$(node -p "require('./package.json').version")
 
     # Create git tag manually
-    git tag "v$NEW_VERSION"
+    git tag "boltz-swap-v$NEW_VERSION"
 
     # Commit the package.json changes
     git add package.json pnpm-lock.yaml
-    
-    # Use appropriate commit message
-    if [[ "$NEW_VERSION" == *-* ]]; then
-        git commit -m "chore: release $NEW_VERSION"
-    else
-        git commit -m "chore: release $NEW_VERSION"
-    fi
+    git commit -m "chore(boltz-swap): release $NEW_VERSION"
 
     # Push the tag to trigger GitHub release
-    git push origin "v$NEW_VERSION"
+    git push origin "boltz-swap-v$NEW_VERSION"
 
     # Publish to npm with appropriate tag
     echo "Publishing to npm..."
