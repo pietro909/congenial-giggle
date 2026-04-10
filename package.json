@@ -16,13 +16,16 @@
     "regtest:up": "bash apps/regtest/up.sh",
     "regtest:down": "bash apps/regtest/down.sh",
     "regtest:reset": "bash apps/regtest/reset.sh",
-    "regtest:test": "pnpm -C packages/ts-sdk test:integration-docker && pnpm -C packages/boltz-swap test:integration"
+    "regtest:test": "pnpm -C packages/ts-sdk test:integration-docker && pnpm -C packages/boltz-swap test:integration",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
+    "@types/node": "24.3.1",
     "@typescript-eslint/eslint-plugin": "^8.43.0",
     "@typescript-eslint/parser": "^8.43.0",
     "eslint": "^9.35.0",
+    "husky": "9.1.7",
     "prettier": "3.6.2",
     "typescript": "5.9.2",
     "vitest": "3.2.4"
