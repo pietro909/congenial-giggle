@@ -25,7 +25,9 @@ pnpm install
 
 ```bash
 pnpm run build          # Build all packages (ts-sdk first, then boltz-swap)
-pnpm test               # Run unit tests
+pnpm test               # Run all unit and integration tests
+pnpm run test:unit      # Run unit tests across packages
+pnpm run test:integration # Run integration tests across packages against regtest
 pnpm run lint           # Check formatting (prettier)
 ```
 
@@ -45,7 +47,9 @@ Integration tests use the shared [arkade-regtest](https://github.com/ArkLabsHQ/a
 
 ```bash
 pnpm run regtest:up      # Start nigiri + arkd, boltz, LND, fulmine, etc.
-pnpm run regtest:test    # Run e2e tests for all packages
+pnpm run regtest:setup   # Initialize wallets and shared test fixtures
+pnpm run test:integration # Run e2e tests for all packages against regtest
+pnpm run regtest:test    # Run setup + e2e tests
 pnpm run regtest:down    # Stop the stack
 pnpm run regtest:reset   # Stop and remove volumes
 ```

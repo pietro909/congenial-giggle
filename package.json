@@ -8,15 +8,18 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r test:unit",
+    "test": "pnpm run test:unit && pnpm run test:integration",
+    "test:unit": "pnpm -r test:unit",
+    "test:integration": "ARK_ENV=docker pnpm -C packages/ts-sdk test:integration && pnpm -C packages/boltz-swap test:integration",
     "lint": "pnpm -r lint",
     "release": "bash scripts/release.sh all",
     "release:ts-sdk": "bash scripts/release.sh ts-sdk",
     "release:boltz-swap": "bash scripts/release.sh boltz-swap",
     "regtest:up": "bash regtest/start-env.sh",
+    "regtest:setup": "pnpm -C packages/boltz-swap exec node test/e2e/setup.mjs",
     "regtest:down": "bash regtest/stop-env.sh",
     "regtest:reset": "bash regtest/clean-env.sh",
-    "regtest:test": "pnpm -C packages/ts-sdk test:integration-docker && pnpm -C packages/boltz-swap test:integration",
+    "regtest:test": "pnpm run regtest:setup && pnpm run test:integration",
     "prepare": "husky"
   },
   "devDependencies": {

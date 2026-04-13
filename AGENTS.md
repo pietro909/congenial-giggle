@@ -11,7 +11,9 @@ This file provides guidance to AI coding assistants when working with code in th
 ```bash
 # Monorepo-wide
 pnpm run build                # Build all packages (ts-sdk must build before boltz-swap)
-pnpm test                     # Run all unit tests
+pnpm test                     # Run all unit and integration tests
+pnpm run test:unit            # Run all unit tests
+pnpm run test:integration     # Run all integration tests against the root regtest stack
 pnpm run lint                 # Check formatting (prettier)
 
 # Per-package (from repo root)
@@ -29,7 +31,9 @@ pnpm -C packages/ts-sdk vitest run -t "test name pattern"
 
 # Integration tests (require Docker regtest stack)
 pnpm run regtest:up           # Start nigiri + Docker services
-pnpm run regtest:test         # Run integration tests for both packages
+pnpm run regtest:setup        # Initialize wallets and shared test fixtures
+pnpm run test:integration     # Run integration tests for both packages
+pnpm run regtest:test         # Run setup + integration tests for both packages
 pnpm run regtest:down         # Stop Docker services
 pnpm run regtest:reset        # Reset Docker volumes
 
