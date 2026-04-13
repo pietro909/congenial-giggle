@@ -4,6 +4,7 @@ node_modules
 dist
 coverage
 .env
+!.env.regtest
 .idea
 .vscode
 .tmp
