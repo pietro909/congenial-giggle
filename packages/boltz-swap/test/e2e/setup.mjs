@@ -16,10 +16,15 @@ async function execCommand(command, silent = false) {
             const result = execSync(command, options).toString().trim();
             resolve(result);
         } catch (error) {
-            // If the error indicates the wallet is already initialized, we can continue
+            const commandOutput = [error.message, error.stdout, error.stderr]
+                .filter(Boolean)
+                .map((value) => value.toString())
+                .join("\n");
+
+            // arkd emits this on stdout in CI, so inspect the full command output.
             if (
-                error.stderr &&
-                error.stderr.toString().includes("wallet already initialized")
+                command.includes("arkd wallet create") &&
+                commandOutput.includes("wallet already initialized")
             ) {
                 console.log("Wallet already initialized, continuing...");
                 resolve("");
