@@ -250,13 +250,6 @@ async function setupBoltz() {
         await execCommand("nigiri faucet lnd 1", true);
         console.log("  ✔ Funded");
 
-        console.log("\nStarting Boltz LND container...");
-        await execCommand(
-            "docker compose -f test.docker-compose.yml up -d boltz-lnd",
-            true
-        );
-        console.log("  ✔ Container started");
-
         console.log("\nWaiting for Boltz LND to be ready...");
         await waitForCmd(
             "docker exec boltz-lnd lncli --network=regtest getinfo"
@@ -321,12 +314,6 @@ async function setupBoltz() {
         await execCommand(`${lncli} payinvoice --force ${invoice}`, true);
         console.log("  ✔ Channel balanced (50k sats each side)");
 
-        console.log("\nStarting Fulmine container...");
-        await execCommand(
-            "docker compose -f test.docker-compose.yml up -d boltz-fulmine",
-            true
-        );
-        console.log("  ✔ Container started");
         await sleep(5000);
 
         console.log("\nGenerating Fulmine seed...");
@@ -373,20 +360,6 @@ async function setupBoltz() {
             true
         );
         console.log("  ✔ Funds settled");
-
-        console.log("\nStarting Boltz backend and PostgreSQL...");
-        await execCommand(
-            "docker compose -f test.docker-compose.yml up -d boltz-postgres boltz",
-            true
-        );
-        console.log("  ✔ Containers started");
-
-        console.log("\nStarting CORS proxy...");
-        await execCommand(
-            "docker compose -f test.docker-compose.yml up -d cors",
-            true
-        );
-        console.log("  ✔ Container started");
 
         console.log("\n✔ Boltz setup completed");
     } catch (error) {
