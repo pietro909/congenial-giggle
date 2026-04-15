@@ -28,6 +28,12 @@ async function execCommand(command, silent = false) {
             ) {
                 console.log("Wallet already initialized, continuing...");
                 resolve("");
+            } else if (
+                command.includes("connect") &&
+                commandOutput.includes("already connected to peer")
+            ) {
+                console.log("Already connected to peer, continuing...");
+                resolve("");
             } else {
                 reject(error);
             }
