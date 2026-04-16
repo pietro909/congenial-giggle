@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ArkadeLightningMessageHandler } from "../../src/serviceWorker/arkade-lightning-message-handler";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { ArkadeSwapsMessageHandler } from "../../src/serviceWorker/arkade-swaps-message-handler";
 import { SwapRepository } from "../../src/repositories/swap-repository";
-import { PendingReverseSwap } from "../../src/types";
+import { BoltzReverseSwap } from "../../src/types";
 import { BoltzSwapStatus } from "../../src/boltz-swap-provider";
 
-describe("ArkadeLightningMessageHandler broadcastEvent", () => {
-    let handler: ArkadeLightningMessageHandler;
+describe("ArkadeSwapsMessageHandler broadcastEvent", () => {
+    let handler: ArkadeSwapsMessageHandler;
     let postMessage: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
@@ -16,7 +16,7 @@ describe("ArkadeLightningMessageHandler broadcastEvent", () => {
                 matchAll: vi.fn().mockResolvedValue([{ postMessage }]),
             },
         };
-        handler = new ArkadeLightningMessageHandler({} as SwapRepository);
+        handler = new ArkadeSwapsMessageHandler({} as SwapRepository);
     });
 
     afterEach(() => {
@@ -24,7 +24,7 @@ describe("ArkadeLightningMessageHandler broadcastEvent", () => {
     });
 
     it("broadcasts swap update event to all clients", async () => {
-        const swap = { id: "s1" } as PendingReverseSwap;
+        const swap = { id: "s1" } as BoltzReverseSwap;
         await (handler as any).broadcastEvent({
             tag: "TAG",
             type: "SM-EVENT-SWAP_UPDATE",

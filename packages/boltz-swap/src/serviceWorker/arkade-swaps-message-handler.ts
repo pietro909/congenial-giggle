@@ -4,6 +4,7 @@ import {
     RequestEnvelope,
     ResponseEnvelope,
     MessageHandler,
+    type ArkInfo,
 } from "@arkade-os/sdk";
 import {
     BoltzSwapProvider,
@@ -13,14 +14,18 @@ import {
 import { SwapRepository } from "../repositories/swap-repository";
 import {
     ArkadeSwapsConfig,
+    ArkToBtcResponse,
+    BtcToArkResponse,
+    Chain,
+    ChainFeesResponse,
     type CreateLightningInvoiceRequest,
     type CreateLightningInvoiceResponse,
     type FeesResponse,
     type LimitsResponse,
     Network,
-    PendingChainSwap,
-    PendingReverseSwap,
-    PendingSubmarineSwap,
+    BoltzChainSwap,
+    BoltzReverseSwap,
+    BoltzSubmarineSwap,
     type SendLightningPaymentRequest,
     SendLightningPaymentResponse,
 } from "../types";
@@ -30,13 +35,13 @@ import {
     IndexerProvider,
     RestIndexerProvider,
 } from "@arkade-os/sdk";
-import { ArkadeLightning, IArkadeLightning } from "../arkade-swaps";
+import { ArkadeSwaps } from "../arkade-swaps";
 import type { SwapManagerClient } from "../swap-manager";
 
-export const DEFAULT_MESSAGE_TAG = "ARKADE_LIGHTNING_UPDATER";
+export const DEFAULT_MESSAGE_TAG = "ARKADE_SWAPS_UPDATER";
 
-export type RequestInitArkLn = RequestEnvelope & {
-    type: "INIT_ARKADE_LIGHTNING";
+export type RequestInitArkSwaps = RequestEnvelope & {
+    type: "INIT_ARKADE_SWAPS";
     payload: Omit<
         ArkadeSwapsConfig,
         "wallet" | "swapRepository" | "swapProvider" | "indexerProvider"
@@ -49,8 +54,8 @@ export type RequestInitArkLn = RequestEnvelope & {
     };
 };
 
-export type ResponseInitArkLn = ResponseEnvelope & {
-    type: "ARKADE_LIGHTNING_INITIALIZED";
+export type ResponseInitArkSwaps = ResponseEnvelope & {
+    type: "ARKADE_SWAPS_INITIALIZED";
 };
 
 export type RequestCreateLightningInvoice = RequestEnvelope & {
@@ -77,7 +82,7 @@ export type RequestCreateSubmarineSwap = RequestEnvelope & {
 };
 export type ResponseCreateSubmarineSwap = ResponseEnvelope & {
     type: "SUBMARINE_SWAP_CREATED";
-    payload: PendingSubmarineSwap;
+    payload: BoltzSubmarineSwap;
 };
 
 export type RequestCreateReverseSwap = RequestEnvelope & {
@@ -86,12 +91,12 @@ export type RequestCreateReverseSwap = RequestEnvelope & {
 };
 export type ResponseCreateReverseSwap = ResponseEnvelope & {
     type: "REVERSE_SWAP_CREATED";
-    payload: PendingReverseSwap;
+    payload: BoltzReverseSwap;
 };
 
 export type RequestClaimVhtlc = RequestEnvelope & {
     type: "CLAIM_VHTLC";
-    payload: PendingReverseSwap;
+    payload: BoltzReverseSwap;
 };
 export type ResponseClaimVhtlc = ResponseEnvelope & {
     type: "VHTLC_CLAIMED";
@@ -99,7 +104,7 @@ export type ResponseClaimVhtlc = ResponseEnvelope & {
 
 export type RequestRefundVhtlc = RequestEnvelope & {
     type: "REFUND_VHTLC";
-    payload: PendingSubmarineSwap;
+    payload: BoltzSubmarineSwap;
 };
 export type ResponseRefundVhtlc = ResponseEnvelope & {
     type: "VHTLC_REFUNDED";
@@ -107,7 +112,7 @@ export type ResponseRefundVhtlc = ResponseEnvelope & {
 
 export type RequestWaitAndClaim = RequestEnvelope & {
     type: "WAIT_AND_CLAIM";
-    payload: PendingReverseSwap;
+    payload: BoltzReverseSwap;
 };
 export type ResponseWaitAndClaim = ResponseEnvelope & {
     type: "WAIT_AND_CLAIMED";
@@ -116,7 +121,7 @@ export type ResponseWaitAndClaim = ResponseEnvelope & {
 
 export type RequestWaitForSwapSettlement = RequestEnvelope & {
     type: "WAIT_FOR_SWAP_SETTLEMENT";
-    payload: PendingSubmarineSwap;
+    payload: BoltzSubmarineSwap;
 };
 export type ResponseWaitForSwapSettlement = ResponseEnvelope & {
     type: "SWAP_SETTLED";
@@ -130,39 +135,42 @@ export type RequestRestoreSwaps = RequestEnvelope & {
 export type ResponseRestoreSwaps = ResponseEnvelope & {
     type: "SWAPS_RESTORED";
     payload: {
-        reverseSwaps: PendingReverseSwap[];
-        submarineSwaps: PendingSubmarineSwap[];
+        chainSwaps: BoltzChainSwap[];
+        reverseSwaps: BoltzReverseSwap[];
+        submarineSwaps: BoltzSubmarineSwap[];
     };
 };
 
 export type RequestEnrichReverseSwapPreimage = RequestEnvelope & {
     type: "ENRICH_REVERSE_SWAP_PREIMAGE";
-    payload: { swap: PendingReverseSwap; preimage: string };
+    payload: { swap: BoltzReverseSwap; preimage: string };
 };
 export type ResponseEnrichReverseSwapPreimage = ResponseEnvelope & {
     type: "REVERSE_SWAP_PREIMAGE_ENRICHED";
-    payload: PendingReverseSwap;
+    payload: BoltzReverseSwap;
 };
 
 export type RequestEnrichSubmarineSwapInvoice = RequestEnvelope & {
     type: "ENRICH_SUBMARINE_SWAP_INVOICE";
-    payload: { swap: PendingSubmarineSwap; invoice: string };
+    payload: { swap: BoltzSubmarineSwap; invoice: string };
 };
 export type ResponseEnrichSubmarineSwapInvoice = ResponseEnvelope & {
     type: "SUBMARINE_SWAP_INVOICE_ENRICHED";
-    payload: PendingSubmarineSwap;
+    payload: BoltzSubmarineSwap;
 };
 
 export type RequestGetFees = RequestEnvelope & {
     type: "GET_FEES";
+    payload?: { from: Chain; to: Chain };
 };
 export type ResponseGetFees = ResponseEnvelope & {
     type: "FEES";
-    payload: FeesResponse;
+    payload: FeesResponse | ChainFeesResponse;
 };
 
 export type RequestGetLimits = RequestEnvelope & {
     type: "GET_LIMITS";
+    payload?: { from: Chain; to: Chain };
 };
 export type ResponseGetLimits = ResponseEnvelope & {
     type: "LIMITS";
@@ -183,7 +191,7 @@ export type RequestGetPendingSubmarineSwaps = RequestEnvelope & {
 };
 export type ResponseGetPendingSubmarineSwaps = ResponseEnvelope & {
     type: "PENDING_SUBMARINE_SWAPS";
-    payload: PendingSubmarineSwap[];
+    payload: BoltzSubmarineSwap[];
 };
 
 export type RequestGetPendingReverseSwaps = RequestEnvelope & {
@@ -191,7 +199,15 @@ export type RequestGetPendingReverseSwaps = RequestEnvelope & {
 };
 export type ResponseGetPendingReverseSwaps = ResponseEnvelope & {
     type: "PENDING_REVERSE_SWAPS";
-    payload: PendingReverseSwap[];
+    payload: BoltzReverseSwap[];
+};
+
+export type RequestGetPendingChainSwaps = RequestEnvelope & {
+    type: "GET_PENDING_CHAIN_SWAPS";
+};
+export type ResponseGetPendingChainSwaps = ResponseEnvelope & {
+    type: "PENDING_CHAIN_SWAPS";
+    payload: BoltzChainSwap[];
 };
 
 export type RequestGetSwapHistory = RequestEnvelope & {
@@ -199,7 +215,7 @@ export type RequestGetSwapHistory = RequestEnvelope & {
 };
 export type ResponseGetSwapHistory = ResponseEnvelope & {
     type: "SWAP_HISTORY";
-    payload: (PendingReverseSwap | PendingSubmarineSwap | PendingChainSwap)[];
+    payload: (BoltzReverseSwap | BoltzSubmarineSwap | BoltzChainSwap)[];
 };
 
 export type RequestRefreshSwapsStatus = RequestEnvelope & {
@@ -207,6 +223,131 @@ export type RequestRefreshSwapsStatus = RequestEnvelope & {
 };
 export type ResponseRefreshSwapsStatus = ResponseEnvelope & {
     type: "SWAPS_STATUS_REFRESHED";
+};
+
+export type RequestArkToBtc = RequestEnvelope & {
+    type: "ARK_TO_BTC";
+    payload: {
+        btcAddress: string;
+        senderLockAmount?: number;
+        receiverLockAmount?: number;
+        feeSatsPerByte?: number;
+    };
+};
+export type ResponseArkToBtc = ResponseEnvelope & {
+    type: "ARK_TO_BTC_CREATED";
+    payload: ArkToBtcResponse;
+};
+
+export type RequestBtcToArk = RequestEnvelope & {
+    type: "BTC_TO_ARK";
+    payload: {
+        feeSatsPerByte?: number;
+        senderLockAmount?: number;
+        receiverLockAmount?: number;
+    };
+};
+export type ResponseBtcToArk = ResponseEnvelope & {
+    type: "BTC_TO_ARK_CREATED";
+    payload: BtcToArkResponse;
+};
+
+export type RequestCreateChainSwap = RequestEnvelope & {
+    type: "CREATE_CHAIN_SWAP";
+    payload: {
+        to: Chain;
+        from: Chain;
+        toAddress: string;
+        feeSatsPerByte?: number;
+        senderLockAmount?: number;
+        receiverLockAmount?: number;
+    };
+};
+export type ResponseCreateChainSwap = ResponseEnvelope & {
+    type: "CHAIN_SWAP_CREATED";
+    payload: BoltzChainSwap;
+};
+
+export type RequestWaitAndClaimChain = RequestEnvelope & {
+    type: "WAIT_AND_CLAIM_CHAIN";
+    payload: BoltzChainSwap;
+};
+export type ResponseWaitAndClaimChain = ResponseEnvelope & {
+    type: "CHAIN_CLAIMED";
+    payload: { txid: string };
+};
+
+export type RequestWaitAndClaimArk = RequestEnvelope & {
+    type: "WAIT_AND_CLAIM_ARK";
+    payload: BoltzChainSwap;
+};
+export type ResponseWaitAndClaimArk = ResponseEnvelope & {
+    type: "ARK_CLAIMED";
+    payload: { txid: string };
+};
+
+export type RequestWaitAndClaimBtc = RequestEnvelope & {
+    type: "WAIT_AND_CLAIM_BTC";
+    payload: BoltzChainSwap;
+};
+export type ResponseWaitAndClaimBtc = ResponseEnvelope & {
+    type: "BTC_CLAIMED";
+    payload: { txid: string };
+};
+
+export type RequestClaimArk = RequestEnvelope & {
+    type: "CLAIM_ARK";
+    payload: BoltzChainSwap;
+};
+export type ResponseClaimArk = ResponseEnvelope & {
+    type: "ARK_CLAIM_EXECUTED";
+};
+
+export type RequestClaimBtc = RequestEnvelope & {
+    type: "CLAIM_BTC";
+    payload: BoltzChainSwap;
+};
+export type ResponseClaimBtc = ResponseEnvelope & {
+    type: "BTC_CLAIM_EXECUTED";
+};
+
+export type RequestRefundArk = RequestEnvelope & {
+    type: "REFUND_ARK";
+    payload: BoltzChainSwap;
+};
+export type ResponseRefundArk = ResponseEnvelope & {
+    type: "ARK_REFUND_EXECUTED";
+};
+
+export type RequestSignServerClaim = RequestEnvelope & {
+    type: "SIGN_SERVER_CLAIM";
+    payload: BoltzChainSwap;
+};
+export type ResponseSignServerClaim = ResponseEnvelope & {
+    type: "SERVER_CLAIM_SIGNED";
+};
+
+export type RequestVerifyChainSwap = RequestEnvelope & {
+    type: "VERIFY_CHAIN_SWAP";
+    payload: {
+        to: Chain;
+        from: Chain;
+        swap: BoltzChainSwap;
+        arkInfo: ArkInfo;
+    };
+};
+export type ResponseVerifyChainSwap = ResponseEnvelope & {
+    type: "CHAIN_SWAP_VERIFIED";
+    payload: { verified: boolean };
+};
+
+export type RequestQuoteSwap = RequestEnvelope & {
+    type: "QUOTE_SWAP";
+    payload: { swapId: string };
+};
+export type ResponseQuoteSwap = ResponseEnvelope & {
+    type: "SWAP_QUOTED";
+    payload: { amount: number };
 };
 
 /* --- SwapManager requests/responses (Service Worker) --- */
@@ -227,7 +368,7 @@ export type ResponseSwapManagerStop = ResponseEnvelope & {
 
 export type RequestSwapManagerAddSwap = RequestEnvelope & {
     type: "SM-ADD_SWAP";
-    payload: PendingReverseSwap | PendingSubmarineSwap | PendingChainSwap;
+    payload: BoltzReverseSwap | BoltzSubmarineSwap | BoltzChainSwap;
 };
 export type ResponseSwapManagerAddSwap = ResponseEnvelope & {
     type: "SM-SWAP_ADDED";
@@ -246,7 +387,7 @@ export type RequestSwapManagerGetPending = RequestEnvelope & {
 };
 export type ResponseSwapManagerGetPending = ResponseEnvelope & {
     type: "SM-PENDING_SWAPS";
-    payload: (PendingReverseSwap | PendingSubmarineSwap | PendingChainSwap)[];
+    payload: (BoltzReverseSwap | BoltzSubmarineSwap | BoltzChainSwap)[];
 };
 
 export type RequestSwapManagerHasSwap = RequestEnvelope & {
@@ -291,8 +432,8 @@ export type ResponseSwapManagerWaitForCompletion = ResponseEnvelope & {
     payload: { txid: string };
 };
 
-export type ArkadeLightningUpdaterRequest =
-    | RequestInitArkLn
+export type ArkadeSwapsUpdaterRequest =
+    | RequestInitArkSwaps
     | RequestCreateLightningInvoice
     | RequestSendLightningPayment
     | RequestCreateSubmarineSwap
@@ -309,8 +450,21 @@ export type ArkadeLightningUpdaterRequest =
     | RequestGetSwapStatus
     | RequestGetPendingSubmarineSwaps
     | RequestGetPendingReverseSwaps
+    | RequestGetPendingChainSwaps
     | RequestGetSwapHistory
     | RequestRefreshSwapsStatus
+    | RequestArkToBtc
+    | RequestBtcToArk
+    | RequestCreateChainSwap
+    | RequestWaitAndClaimChain
+    | RequestWaitAndClaimArk
+    | RequestWaitAndClaimBtc
+    | RequestClaimArk
+    | RequestClaimBtc
+    | RequestRefundArk
+    | RequestSignServerClaim
+    | RequestVerifyChainSwap
+    | RequestQuoteSwap
     | RequestSwapManagerStart
     | RequestSwapManagerStop
     | RequestSwapManagerAddSwap
@@ -321,8 +475,8 @@ export type ArkadeLightningUpdaterRequest =
     | RequestSwapManagerGetStats
     | RequestSwapManagerWaitForCompletion;
 
-export type ArkadeLightningUpdaterResponse =
-    | ResponseInitArkLn
+export type ArkadeSwapsUpdaterResponse =
+    | ResponseInitArkSwaps
     | ResponseCreateLightningInvoice
     | ResponseSendLightningPayment
     | ResponseCreateSubmarineSwap
@@ -339,8 +493,21 @@ export type ArkadeLightningUpdaterResponse =
     | ResponseGetSwapStatus
     | ResponseGetPendingSubmarineSwaps
     | ResponseGetPendingReverseSwaps
+    | ResponseGetPendingChainSwaps
     | ResponseGetSwapHistory
     | ResponseRefreshSwapsStatus
+    | ResponseArkToBtc
+    | ResponseBtcToArk
+    | ResponseCreateChainSwap
+    | ResponseWaitAndClaimChain
+    | ResponseWaitAndClaimArk
+    | ResponseWaitAndClaimBtc
+    | ResponseClaimArk
+    | ResponseClaimBtc
+    | ResponseRefundArk
+    | ResponseSignServerClaim
+    | ResponseVerifyChainSwap
+    | ResponseQuoteSwap
     | ResponseSwapManagerStart
     | ResponseSwapManagerStop
     | ResponseSwapManagerAddSwap
@@ -351,29 +518,29 @@ export type ArkadeLightningUpdaterResponse =
     | ResponseSwapManagerGetStats
     | ResponseSwapManagerWaitForCompletion;
 
-type PendingSwap = PendingReverseSwap | PendingSubmarineSwap | PendingChainSwap;
+type BoltzSwap = BoltzReverseSwap | BoltzSubmarineSwap | BoltzChainSwap;
 
 export type SwapManagerEventMessage =
     | {
           tag: string;
           type: "SM-EVENT-SWAP_UPDATE";
-          payload: { swap: PendingSwap; oldStatus: BoltzSwapStatus };
+          payload: { swap: BoltzSwap; oldStatus: BoltzSwapStatus };
       }
     | {
           tag: string;
           type: "SM-EVENT-SWAP_COMPLETED";
-          payload: { swap: PendingSwap };
+          payload: { swap: BoltzSwap };
       }
     | {
           tag: string;
           type: "SM-EVENT-SWAP_FAILED";
-          payload: { swap: PendingSwap; error: { message: string } };
+          payload: { swap: BoltzSwap; error: { message: string } };
       }
     | {
           tag: string;
           type: "SM-EVENT-ACTION_EXECUTED";
           payload: {
-              swap: PendingSwap;
+              swap: BoltzSwap;
               action:
                   | "claim"
                   | "refund"
@@ -393,22 +560,19 @@ export type SwapManagerEventMessage =
           payload?: { errorMessage?: string };
       };
 
-export class ArkadeLightningMessageHandler
+export class ArkadeSwapsMessageHandler
     implements
-        MessageHandler<
-            ArkadeLightningUpdaterRequest,
-            ArkadeLightningUpdaterResponse
-        >
+        MessageHandler<ArkadeSwapsUpdaterRequest, ArkadeSwapsUpdaterResponse>
 {
     static messageTag = DEFAULT_MESSAGE_TAG;
-    readonly messageTag = ArkadeLightningMessageHandler.messageTag;
+    readonly messageTag = ArkadeSwapsMessageHandler.messageTag;
 
     private arkProvider: ArkProvider | undefined;
     private indexerProvider: IndexerProvider | undefined;
     private swapProvider: BoltzSwapProvider | undefined;
     private wallet: IWallet | undefined;
 
-    private handler: IArkadeLightning | undefined;
+    private handler: ArkadeSwaps | undefined;
     private swapManager: SwapManagerClient | null | undefined;
 
     constructor(private readonly swapRepository: SwapRepository) {}
@@ -454,12 +618,12 @@ export class ArkadeLightningMessageHandler
     }
 
     private tagged(
-        res: Partial<ArkadeLightningUpdaterResponse>
-    ): ArkadeLightningUpdaterResponse {
+        res: Partial<ArkadeSwapsUpdaterResponse>
+    ): ArkadeSwapsUpdaterResponse {
         return {
             ...res,
             tag: this.messageTag,
-        } as ArkadeLightningUpdaterResponse;
+        } as ArkadeSwapsUpdaterResponse;
     }
 
     private async broadcastEvent(
@@ -478,15 +642,15 @@ export class ArkadeLightningMessageHandler
     }
 
     async handleMessage(
-        message: ArkadeLightningUpdaterRequest
-    ): Promise<ArkadeLightningUpdaterResponse> {
+        message: ArkadeSwapsUpdaterRequest
+    ): Promise<ArkadeSwapsUpdaterResponse> {
         const id = message.id;
-        if (message.type === "INIT_ARKADE_LIGHTNING") {
+        if (message.type === "INIT_ARKADE_SWAPS") {
             try {
                 await this.handleInit(message);
                 return this.tagged({
                     id,
-                    type: "ARKADE_LIGHTNING_INITIALIZED",
+                    type: "ARKADE_SWAPS_INITIALIZED",
                 });
             } catch (error) {
                 return this.tagged({ id, error: error as Error });
@@ -612,12 +776,22 @@ export class ArkadeLightningMessageHandler
                 }
 
                 case "GET_FEES": {
-                    const res = await this.handler.getFees();
+                    const res = message.payload
+                        ? await this.handler.getFees(
+                              message.payload.from,
+                              message.payload.to
+                          )
+                        : await this.handler.getFees();
                     return this.tagged({ id, type: "FEES", payload: res });
                 }
 
                 case "GET_LIMITS": {
-                    const res = await this.handler.getLimits();
+                    const res = message.payload
+                        ? await this.handler.getLimits(
+                              message.payload.from,
+                              message.payload.to
+                          )
+                        : await this.handler.getLimits();
                     return this.tagged({ id, type: "LIMITS", payload: res });
                 }
 
@@ -650,6 +824,15 @@ export class ArkadeLightningMessageHandler
                     });
                 }
 
+                case "GET_PENDING_CHAIN_SWAPS": {
+                    const res = await this.handler.getPendingChainSwaps();
+                    return this.tagged({
+                        id,
+                        type: "PENDING_CHAIN_SWAPS",
+                        payload: res,
+                    });
+                }
+
                 case "GET_SWAP_HISTORY": {
                     const res = await this.handler.getSwapHistory();
                     return this.tagged({
@@ -662,6 +845,108 @@ export class ArkadeLightningMessageHandler
                 case "REFRESH_SWAPS_STATUS":
                     await this.handler.refreshSwapsStatus();
                     return this.tagged({ id, type: "SWAPS_STATUS_REFRESHED" });
+
+                case "ARK_TO_BTC": {
+                    const res = await this.handler.arkToBtc(message.payload);
+                    return this.tagged({
+                        id,
+                        type: "ARK_TO_BTC_CREATED",
+                        payload: res,
+                    });
+                }
+
+                case "BTC_TO_ARK": {
+                    const res = await this.handler.btcToArk(message.payload);
+                    return this.tagged({
+                        id,
+                        type: "BTC_TO_ARK_CREATED",
+                        payload: res,
+                    });
+                }
+
+                case "CREATE_CHAIN_SWAP": {
+                    const res = await this.handler.createChainSwap(
+                        message.payload
+                    );
+                    return this.tagged({
+                        id,
+                        type: "CHAIN_SWAP_CREATED",
+                        payload: res,
+                    });
+                }
+
+                case "WAIT_AND_CLAIM_CHAIN": {
+                    const res = await this.handler.waitAndClaimChain(
+                        message.payload
+                    );
+                    return this.tagged({
+                        id,
+                        type: "CHAIN_CLAIMED",
+                        payload: res,
+                    });
+                }
+
+                case "WAIT_AND_CLAIM_ARK": {
+                    const res = await this.handler.waitAndClaimArk(
+                        message.payload
+                    );
+                    return this.tagged({
+                        id,
+                        type: "ARK_CLAIMED",
+                        payload: res,
+                    });
+                }
+
+                case "WAIT_AND_CLAIM_BTC": {
+                    const res = await this.handler.waitAndClaimBtc(
+                        message.payload
+                    );
+                    return this.tagged({
+                        id,
+                        type: "BTC_CLAIMED",
+                        payload: res,
+                    });
+                }
+
+                case "CLAIM_ARK":
+                    await this.handler.claimArk(message.payload);
+                    return this.tagged({ id, type: "ARK_CLAIM_EXECUTED" });
+
+                case "CLAIM_BTC":
+                    await this.handler.claimBtc(message.payload);
+                    return this.tagged({ id, type: "BTC_CLAIM_EXECUTED" });
+
+                case "REFUND_ARK":
+                    await this.handler.refundArk(message.payload);
+                    return this.tagged({ id, type: "ARK_REFUND_EXECUTED" });
+
+                case "SIGN_SERVER_CLAIM":
+                    await this.handler.signCooperativeClaimForServer(
+                        message.payload
+                    );
+                    return this.tagged({ id, type: "SERVER_CLAIM_SIGNED" });
+
+                case "VERIFY_CHAIN_SWAP": {
+                    const verified = await this.handler.verifyChainSwap({
+                        ...message.payload,
+                    });
+                    return this.tagged({
+                        id,
+                        type: "CHAIN_SWAP_VERIFIED",
+                        payload: { verified },
+                    });
+                }
+
+                case "QUOTE_SWAP": {
+                    const amount = await this.handler.quoteSwap(
+                        message.payload.swapId
+                    );
+                    return this.tagged({
+                        id,
+                        type: "SWAP_QUOTED",
+                        payload: { amount },
+                    });
+                }
 
                 /* --- SwapManager methods --- */
                 case "SM-START": {
@@ -749,7 +1034,7 @@ export class ArkadeLightningMessageHandler
         }
     }
 
-    private async handleInit({ payload }: RequestInitArkLn): Promise<void> {
+    private async handleInit({ payload }: RequestInitArkSwaps): Promise<void> {
         if (!this.wallet) {
             throw new Error("Wallet is required");
         }
@@ -761,7 +1046,7 @@ export class ArkadeLightningMessageHandler
             network: payload.network,
         });
 
-        const handler = new ArkadeLightning({
+        const handler = new ArkadeSwaps({
             wallet: this.wallet,
             arkProvider: this.arkProvider,
             swapProvider: this.swapProvider,

@@ -6,8 +6,8 @@ import {
     CreateSubmarineSwapRequest,
 } from "../../src/boltz-swap-provider";
 import type {
-    PendingReverseSwap,
-    PendingSubmarineSwap,
+    BoltzReverseSwap,
+    BoltzSubmarineSwap,
     ArkadeSwapsConfig,
 } from "../../src/types";
 import {
@@ -70,8 +70,10 @@ const getBtcAddressFunds = async (address: string): Promise<number> => {
     );
     const outputJson = JSON.parse(stdout);
     return (
-        outputJson.chain_stats.funded_txo_sum +
-        outputJson.mempool_stats.funded_txo_sum
+        outputJson.chain_stats.funded_txo_sum -
+        outputJson.chain_stats.spent_txo_sum +
+        outputJson.mempool_stats.funded_txo_sum -
+        outputJson.mempool_stats.spent_txo_sum
     );
 };
 
@@ -81,6 +83,13 @@ const getBtcAddressTxs = async (address: string): Promise<number> => {
     );
     const outputJson = JSON.parse(stdout);
     return outputJson.chain_stats.tx_count + outputJson.mempool_stats.tx_count;
+};
+
+const getBtcAddressTxUtxos = async (address: string): Promise<any[]> => {
+    const { stdout } = await execAsync(
+        `curl -s http://localhost:3000/address/${address}/utxo`
+    );
+    return JSON.parse(stdout);
 };
 
 const waitForBtcTxConfirmation = async (address: string, timeout = 10_000) => {
@@ -93,6 +102,24 @@ const waitForBtcTxConfirmation = async (address: string, timeout = 10_000) => {
         const intervalId = setInterval(async () => {
             const txs = await getBtcAddressTxs(address);
             if (txs === 1) {
+                clearTimeout(timeoutId);
+                clearInterval(intervalId);
+                resolve(true);
+            }
+        }, 500);
+    });
+};
+
+const waitForBtcTxClaimed = async (address: string, timeout = 10_000) => {
+    await generateBlocks(1);
+    await new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            clearInterval(intervalId);
+            reject(new Error("Timed out waiting for Btc explorer to update"));
+        }, timeout);
+        const intervalId = setInterval(async () => {
+            const utxos = await getBtcAddressTxUtxos(address);
+            if (utxos.length === 0) {
                 clearTimeout(timeoutId);
                 clearInterval(intervalId);
                 resolve(true);
@@ -128,6 +155,24 @@ const waitForBalance = async (
     });
 };
 
+/**
+ * Wait until at least one VTXO from the given wallet is in `settled` state.
+ * This is used instead of a fixed sleep to avoid the race where a slow CI
+ * runner hasn't finished the round yet when we try to spend.
+ */
+const waitForSettled = async (
+    getVtxos: () => Promise<{ virtualStatus: { state: string } }[]>,
+    timeout = 15_000
+): Promise<void> => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+        const vtxos = await getVtxos();
+        if (vtxos.some((v) => v.virtualStatus.state === "settled")) return;
+        await sleep(500);
+    }
+    throw new Error("Timed out waiting for VTXO to reach settled state");
+};
+
 describe("ArkadeSwaps", () => {
     let indexerProvider: RestIndexerProvider;
     let swapProvider: BoltzSwapProvider;
@@ -143,7 +188,7 @@ describe("ArkadeSwaps", () => {
     const arkUrl = "http://localhost:7070";
 
     const fundWallet = async (amount: number): Promise<void> => {
-        await fundedWallet.sendBitcoin({
+        await fundedWallet.send({
             address: await wallet.getAddress(),
             amount,
         });
@@ -173,6 +218,7 @@ describe("ArkadeSwaps", () => {
         fundedWallet = await Wallet.create({
             identity: SingleKey.fromRandomBytes(),
             arkServerUrl: arkUrl,
+            settlementConfig: false,
         });
 
         const amount = 1_000_000;
@@ -209,18 +255,20 @@ describe("ArkadeSwaps", () => {
         wallet = await Wallet.create({
             identity,
             arkServerUrl: arkUrl,
+            settlementConfig: false,
             onchainProvider: new EsploraProvider("http://localhost:3000", {
                 forcePolling: true,
                 pollingInterval: 2000,
             }),
         });
 
-        // Create ArkadeSwaps instance
+        // Create ArkadeSwaps instance (disable SwapManager for manual swap tests)
         swaps = new ArkadeSwaps({
             wallet,
             swapProvider,
             arkProvider,
             indexerProvider,
+            swapManager: false,
         });
 
         // Mock console.error to avoid polluting test output
@@ -600,7 +648,7 @@ describe("ArkadeSwaps", () => {
                     invoice,
                 });
 
-                await wallet.sendBitcoin({
+                await wallet.send({
                     address: pendingSwap.response.address,
                     amount: pendingSwap.response.expectedAmount,
                 });
@@ -638,7 +686,7 @@ describe("ArkadeSwaps", () => {
 
                     const swapHistory = await swaps.getSwapHistory();
                     expect(swapHistory.length).toBeGreaterThanOrEqual(1);
-                    const failedSwap = swapHistory[0] as PendingSubmarineSwap;
+                    const failedSwap = swapHistory[0] as BoltzSubmarineSwap;
                     expect(failedSwap.status).toBe("invoice.failedToPay");
                 }
             );
@@ -657,7 +705,7 @@ describe("ArkadeSwaps", () => {
                         invoice: res.invoice,
                     });
 
-                    await wallet.sendBitcoin({
+                    await wallet.send({
                         address: pendingSwap.response.address,
                         amount: pendingSwap.response.expectedAmount,
                     });
@@ -794,7 +842,7 @@ describe("ArkadeSwaps", () => {
                             btcAddress,
                         });
 
-                    await wallet.sendBitcoin({
+                    await wallet.send({
                         address: arkAddress,
                         amount: amountToPay,
                     });
@@ -844,7 +892,7 @@ describe("ArkadeSwaps", () => {
                             btcAddress,
                         });
 
-                    await wallet.sendBitcoin({
+                    await wallet.send({
                         address: arkAddress,
                         amount: amountToPay,
                     });
@@ -882,7 +930,7 @@ describe("ArkadeSwaps", () => {
                         toAddress,
                     });
 
-                    await wallet.sendBitcoin({
+                    await wallet.send({
                         address: swap.response.lockupDetails.lockupAddress,
                         amount: swap.response.lockupDetails.amount,
                     });
@@ -924,7 +972,7 @@ describe("ArkadeSwaps", () => {
                         toAddress,
                     });
 
-                    await wallet.sendBitcoin({
+                    await wallet.send({
                         address: swap.response.lockupDetails.lockupAddress,
                         amount: swap.response.lockupDetails.amount,
                     });
@@ -968,7 +1016,7 @@ describe("ArkadeSwaps", () => {
                         toAddress,
                     });
 
-                    await wallet.sendBitcoin({
+                    await wallet.send({
                         address: swap.response.lockupDetails.lockupAddress,
                         amount: sendAmount,
                     });
@@ -1059,6 +1107,29 @@ describe("ArkadeSwaps", () => {
 
                     const balance = await wallet.getBalance();
                     expect(balance.available).toEqual(amountSats);
+                }
+            );
+
+            it(
+                "should help Boltz claim the HTLC",
+                { timeout: 20_000 },
+                async () => {
+                    const amountSats = 21000;
+                    const { btcAddress, amountToPay, pendingSwap } =
+                        await swaps.btcToArk({
+                            receiverLockAmount: amountSats,
+                        });
+
+                    await fundBtcAddress(btcAddress, amountToPay);
+                    const initialBalance = await getBtcAddressFunds(btcAddress);
+                    expect(initialBalance).toBeGreaterThan(0);
+
+                    await swaps.waitAndClaimArk(pendingSwap);
+
+                    const balance = await wallet.getBalance();
+                    expect(balance.available).toEqual(amountSats);
+
+                    await waitForBtcTxClaimed(btcAddress);
                 }
             );
 
@@ -1176,7 +1247,7 @@ describe("ArkadeSwaps", () => {
                 const swapHistory = await swaps.getSwapHistory();
                 expect(swapHistory.length).toBeGreaterThanOrEqual(1);
 
-                const swap = swapHistory[0] as PendingReverseSwap;
+                const swap = swapHistory[0] as BoltzReverseSwap;
                 expect(swap.request.invoiceAmount).toBe(amount);
                 expect(swap.status).toBe("invoice.settled");
                 expect(swap.type).toBe("reverse");
@@ -1213,7 +1284,7 @@ describe("ArkadeSwaps", () => {
                 const swapHistory = await swaps.getSwapHistory();
                 expect(swapHistory.length).toBeGreaterThanOrEqual(1);
 
-                const swap = swapHistory[0] as PendingSubmarineSwap;
+                const swap = swapHistory[0] as BoltzSubmarineSwap;
                 expect(swap.status).toBe("transaction.claimed");
                 expect(swap.request.invoice).toBe(invoice);
                 expect(swap.type).toBe("submarine");
@@ -1298,5 +1369,153 @@ describe("ArkadeSwaps", () => {
                 expect(result[1].type).toBe("submarine");
             });
         });
+    });
+
+    // ==========================================
+    // Default wallet settings (VtxoManager enabled)
+    // ==========================================
+
+    describe("Default wallet settings (VtxoManager enabled)", () => {
+        it(
+            "should receive from Lightning with VtxoManager enabled",
+            { timeout: 15_000 },
+            async () => {
+                const defaultWallet = await Wallet.create({
+                    identity: SingleKey.fromPrivateKey(
+                        schnorr.utils.randomSecretKey()
+                    ),
+                    arkServerUrl: arkUrl,
+                    // no settlementConfig — VtxoManager enabled by default
+                });
+
+                try {
+                    const defaultSwaps = new ArkadeSwaps({
+                        wallet: defaultWallet,
+                        swapProvider,
+                        arkProvider: new RestArkProvider(arkUrl),
+                        indexerProvider: new RestIndexerProvider(arkUrl),
+                        swapManager: false,
+                    });
+
+                    const amount = 1000;
+                    const pendingSwap = await defaultSwaps.createReverseSwap({
+                        amount,
+                    });
+
+                    sleep(1000).then(() =>
+                        payInvoice(pendingSwap.response.invoice).catch((err) =>
+                            console.error("Error paying invoice:", err)
+                        )
+                    );
+
+                    const result = await defaultSwaps.waitAndClaim(pendingSwap);
+                    expect(result).toHaveProperty("txid");
+                    expect(result.txid).toHaveLength(64);
+
+                    const balance = await defaultWallet.getBalance();
+                    expect(balance.available).toBeGreaterThan(0);
+                } finally {
+                    await defaultWallet.dispose();
+                }
+            }
+        );
+
+        // TODO: The Indexer Issue
+        //
+        // After VtxoManager's SSE subscription triggers an auto-settlement round, the indexer returns multiple VTXOs
+        // as non-spent when only one should be spendable.
+        //
+        // We proved this by adding clearSyncCursors() before querying — this forces a full bootstrap fetch directly from the indexer,
+        // bypassing any delta-sync cache. The result in the boltz-swap full test suite:
+        //
+        // Expected 1 spendable VTXO but indexer returned 3:
+        //      41a3f660 preconfirmed val=1010   ← stale, committed to pending round
+        //      f046a2bd settled     val=1010   ← stale, consumed by auto-settlement
+        //      2c5c3572 preconfirmed val=996   ← the actual current VTXO
+        //
+        // Why this breaks things: wallet.send() runs coin selection over all VTXOs returned by getVtxos(). It picks one of the two stale 1010-sat VTXOs.
+        // When it submits the PSBT, arkd rejects it with INVALID_PSBT_INPUT (5): missing tapscript spend sig because the server
+        // already committed the forfeit for those VTXOs to the pending round and won't co-sign a new spend.
+        //
+        // Why it's not a cache bug: clearSyncCursors() proves this. It wipes the sync cursors so the next getVtxos() does a full bootstrap fetch:
+        // no delta window, no stale cache entries. The duplicates come straight from the indexer's response.
+        //
+        // Why it only happens in the full suite: Prior tests generate blocks that shift the round timer.
+        // When generateBlocks(10) runs, the round triggers mid-batch, giving VtxoManager's SSE time to auto-register the
+        // settled VTXO for a second round before all 10 blocks are mined. In isolation (no prior block offset),
+        // only one round triggers and the VTXO settles cleanly.
+        it.skip(
+            "should send to Lightning with VtxoManager enabled",
+            { timeout: 45_000 },
+            async () => {
+                // When VtxoManager is enabled, its SSE subscription causes
+                // the ARK server to auto-include new VTXOs in the next
+                // scheduled round. We must let that round complete (by
+                // generating blocks) before spending the resulting VTXOs.
+                const defaultWallet = await Wallet.create({
+                    identity: SingleKey.fromPrivateKey(
+                        schnorr.utils.randomSecretKey()
+                    ),
+                    arkServerUrl: arkUrl,
+                    // default settlementConfig — VtxoManager starts enabled
+                });
+
+                try {
+                    const defaultSwaps = new ArkadeSwaps({
+                        wallet: defaultWallet,
+                        swapProvider,
+                        arkProvider: new RestArkProvider(arkUrl),
+                        indexerProvider: new RestIndexerProvider(arkUrl),
+                        swapManager: false,
+                    });
+
+                    // Fund the wallet via the shared funded wallet
+                    const amount = 1000;
+                    const fundAmount = amount + 10;
+                    await fundedWallet.send({
+                        address: await defaultWallet.getAddress(),
+                        amount: fundAmount,
+                    });
+                    await waitForBalance(
+                        () => defaultWallet.getBalance(),
+                        fundAmount,
+                        5_000
+                    );
+
+                    // Let the server's scheduled round process the auto-
+                    // registered VTXO (ARKD_ROUND_INTERVAL=10 blocks).
+                    // We poll for settled state rather than sleeping a fixed
+                    // duration — on slow CI the round can take longer than
+                    // 3 s, leaving VTXOs preconfirmed and causing arkd to
+                    // reject the PSBT with INVALID_PSBT_INPUT (5): missing
+                    // tapscript spend sig.
+                    await sleep(1000);
+                    await generateBlocks(10);
+                    await waitForSettled(
+                        () => defaultWallet.getVtxos(),
+                        15_000
+                    );
+
+                    // VtxoManager's SSE may have triggered an additional
+                    // auto-settlement round, leaving stale VTXOs in the
+                    // delta-sync cache.  Clear the cursors so the next
+                    // getVtxos() does a full bootstrap and sees only the
+                    // current indexer state.
+                    await defaultWallet.clearSyncCursors();
+
+                    const { invoice } = await getNewLightningInvoice(amount);
+                    const result = await defaultSwaps.sendLightningPayment({
+                        invoice,
+                    });
+
+                    expect(result.txid).toHaveLength(64);
+
+                    const balance = await defaultWallet.getBalance();
+                    expect(balance.available).toBeLessThan(fundAmount);
+                } finally {
+                    await defaultWallet.dispose();
+                }
+            }
+        );
     });
 });

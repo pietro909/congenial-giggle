@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { SQLiteSwapRepository } from "../src/repositories/sqlite/swap-repository";
 import type { SQLExecutor } from "@arkade-os/sdk/repositories/sqlite";
 import type {
-    PendingReverseSwap,
-    PendingSubmarineSwap,
-    PendingChainSwap,
+    BoltzReverseSwap,
+    BoltzSubmarineSwap,
+    BoltzChainSwap,
 } from "../src/types";
 
 // ── Mock SQLExecutor ────────────────────────────────────────────────────
@@ -185,8 +185,8 @@ function createMockExecutor(): SQLExecutor {
 
 const createReverseSwap = (
     id: string,
-    status: PendingReverseSwap["status"]
-): PendingReverseSwap => ({
+    status: BoltzReverseSwap["status"]
+): BoltzReverseSwap => ({
     id,
     type: "reverse",
     createdAt: Date.now() / 1000,
@@ -214,8 +214,8 @@ const createReverseSwap = (
 
 const createSubmarineSwap = (
     id: string,
-    status: PendingSubmarineSwap["status"]
-): PendingSubmarineSwap => ({
+    status: BoltzSubmarineSwap["status"]
+): BoltzSubmarineSwap => ({
     id,
     type: "submarine",
     createdAt: Date.now() / 1000,
@@ -241,9 +241,9 @@ const createSubmarineSwap = (
 
 const createChainSwap = (
     id: string,
-    status: PendingChainSwap["status"],
-    overrides?: Partial<PendingChainSwap>
-): PendingChainSwap => ({
+    status: BoltzChainSwap["status"],
+    overrides?: Partial<BoltzChainSwap>
+): BoltzChainSwap => ({
     id,
     type: "chain",
     createdAt: Date.now() / 1000,
@@ -308,7 +308,7 @@ describe("SQLiteSwapRepository", () => {
         const reverse = createReverseSwap("reverse-1", "swap.created");
         await repo.saveSwap(reverse);
 
-        const [result] = await repo.getAllSwaps<PendingReverseSwap>({
+        const [result] = await repo.getAllSwaps<BoltzReverseSwap>({
             id: "reverse-1",
         });
 
@@ -539,18 +539,16 @@ describe("SQLiteSwapRepository", () => {
     it("handles chain swaps with optional fields", async () => {
         const chain = createChainSwap("c1", "transaction.server.confirmed", {
             toAddress: "bc1qrecipient",
-            btcTxHex: "0200000001abcdef...",
         });
         await repo.saveSwap(chain);
 
-        const [result] = await repo.getAllSwaps<PendingChainSwap>({
+        const [result] = await repo.getAllSwaps<BoltzChainSwap>({
             id: "c1",
         });
 
         expect(result).toBeDefined();
         expect(result.type).toBe("chain");
         expect(result.toAddress).toBe("bc1qrecipient");
-        expect(result.btcTxHex).toBe("0200000001abcdef...");
         expect(result.amount).toBe(50000);
         expect(result.response.claimDetails.amount).toBe(49500);
         expect(result.response.lockupDetails.lockupAddress).toBe("ark1lockup");

@@ -1,7 +1,7 @@
 export { ArkadeSwaps } from "./arkade-swaps";
-export { BoltzSwapProvider } from "./boltz-swap-provider";
-export type { BoltzSwapStatus } from "./boltz-swap-provider";
 export {
+    BoltzSwapProvider,
+    BoltzSwapStatus,
     isChainClaimableStatus,
     isChainFailedStatus,
     isChainFinalStatus,
@@ -37,6 +37,7 @@ export {
     NetworkError,
     PreimageFetchError,
     TransactionFailedError,
+    BoltzRefundError,
 } from "./errors";
 export {
     decodeInvoice,
@@ -50,11 +51,17 @@ export {
     updateReverseSwapStatus,
     updateSubmarineSwapStatus,
     updateChainSwapStatus,
+    enrichReverseSwapPreimage,
+    enrichSubmarineSwapInvoice,
 } from "./utils/swap-helpers";
 export type { SwapSaver } from "./utils/swap-helpers";
 export { SwapManager } from "./swap-manager";
-export { ArkadeLightningMessageHandler } from "./serviceWorker/arkade-lightning-message-handler";
-export { ServiceWorkerArkadeLightning } from "./serviceWorker/arkade-lightning-runtime";
+export { ArkadeSwapsMessageHandler } from "./serviceWorker/arkade-swaps-message-handler";
+export { ServiceWorkerArkadeSwaps } from "./serviceWorker/arkade-swaps-runtime";
+/** `@deprecated` Use ArkadeSwapsMessageHandler */
+export { ArkadeSwapsMessageHandler as ArkadeLightningMessageHandler } from "./serviceWorker/arkade-swaps-message-handler";
+/** `@deprecated` Use ServiceWorkerArkadeSwaps */
+export { ServiceWorkerArkadeSwaps as ServiceWorkerArkadeLightning } from "./serviceWorker/arkade-swaps-runtime";
 export { migrateToSwapRepository } from "./repositories/migrationFromContracts";
 export type {
     CreateLightningInvoiceResponse,
@@ -63,16 +70,17 @@ export type {
     SendLightningPaymentRequest,
     IncomingPaymentSubscription,
     ArkadeSwapsConfig,
-    PendingSubmarineSwap,
-    PendingReverseSwap,
+    ArkadeSwapsCreateConfig,
+    BoltzSubmarineSwap,
+    BoltzReverseSwap,
     ChainFeesResponse,
-    PendingChainSwap,
+    BoltzChainSwap,
     ArkToBtcResponse,
     BtcToArkResponse,
     DecodedInvoice,
     LimitsResponse,
     FeesResponse,
-    PendingSwap,
+    BoltzSwap,
     Network,
     Chain,
     Vtxo,
@@ -86,4 +94,4 @@ export type {
 export { logger, setLogger } from "./logger";
 export type { Logger } from "./logger";
 export { IndexedDbSwapRepository } from "./repositories/IndexedDb/swap-repository";
-export type { SwapRepository } from "./repositories/swap-repository";
+export { SwapRepository } from "./repositories/swap-repository";
