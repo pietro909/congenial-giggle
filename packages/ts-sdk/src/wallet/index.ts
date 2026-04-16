@@ -3,12 +3,13 @@ import { ArkProvider, Output, SettlementEvent } from "../providers/ark";
 import { Identity, ReadonlyIdentity } from "../identity";
 import { RelativeTimelock } from "../script/tapscript";
 import { EncodedVtxoScript, TapLeafScript } from "../script/base";
-import { RenewalConfig } from "./vtxo-manager";
+import { RenewalConfig, SettlementConfig } from "./vtxo-manager";
 import { IndexerProvider } from "../providers/indexer";
 import { OnchainProvider } from "../providers/onchain";
 import { ContractWatcherConfig } from "../contracts/contractWatcher";
 import { ContractRepository, WalletRepository } from "../repositories";
 import { IContractManager } from "../contracts/contractManager";
+import { IDelegatorManager } from "./delegator";
 import { DelegatorProvider } from "../providers/delegator";
 
 /**
@@ -98,20 +99,26 @@ export interface ReadonlyWalletConfig extends BaseWalletConfig {
  *   onchainProvider: new EsploraProvider('https://mempool.space/api')
  * });
  *
- * // With renewal configuration
+ * // With settlement configuration
  * const wallet = await Wallet.create({
  *   identity: SingleKey.fromHex('...'),
  *   arkServerUrl: 'https://ark.example.com',
- *   renewalConfig: {
- *     enabled: true,
- *     thresholdMs: 86400000, // 24 hours
- *   }
+ *   settlementConfig: {
+ *     vtxoThreshold: 86400, // 24 hours in seconds
+ *     boardingUtxoSweep: true,
+ *   },
  * });
  * ```
  */
 export interface WalletConfig extends ReadonlyWalletConfig {
     identity: Identity;
+    /** @deprecated Use settlementConfig instead */
     renewalConfig?: RenewalConfig;
+    /**
+     * Configuration for automatic settlement and renewal.
+     * `false` = explicitly disabled, `undefined` = enabled by default, `{}` = enabled with defaults.
+     */
+    settlementConfig?: SettlementConfig | false;
 }
 
 export type StorageConfig = {
@@ -146,7 +153,7 @@ export interface SendBitcoinParams {
     amount: number;
     feeRate?: number;
     memo?: string;
-    selectedVtxos?: VirtualCoin[];
+    selectedVtxos?: ExtendedVirtualCoin[];
 }
 
 export interface Asset {
@@ -163,7 +170,7 @@ export interface Recipient {
 export type KnownMetadata = Partial<{
     name: string;
     ticker: string;
-    decimals: number; // default to 8
+    decimals: number;
     icon: string; // source that can be passed as src attribute to an <img> element
 }>;
 
@@ -235,6 +242,8 @@ export interface VirtualCoin extends Coin {
     isUnrolled: boolean;
     isSpent?: boolean;
     assets?: Asset[];
+    /** The scriptPubKey (hex) locking this VTXO, as returned by the indexer. */
+    script?: string;
 }
 
 export enum TxType {
@@ -334,7 +343,11 @@ export interface IWallet extends IReadonlyWallet {
         eventCallback?: (event: SettlementEvent) => void
     ): Promise<string>;
     send(...recipients: Recipient[]): Promise<string>;
+
+    // TODO: this needs to be async or find a workaround
     assetManager: IAssetManager;
+
+    getDelegatorManager(): Promise<IDelegatorManager | undefined>;
 }
 
 /**

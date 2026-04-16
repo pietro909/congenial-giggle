@@ -50,8 +50,10 @@ const createWalletStub = () => ({
     getBoardingUtxos: vi.fn().mockResolvedValue([{ txid: "u1" }]),
     getTransactionHistory: vi.fn().mockResolvedValue([{ txid: "h1" }]),
     getContractManager: vi.fn().mockResolvedValue({ id: "manager" }),
+    getDelegatorManager: vi.fn().mockResolvedValue({ id: "delegator" }),
     sendBitcoin: vi.fn().mockResolvedValue("send-txid"),
     settle: vi.fn().mockResolvedValue("settle-txid"),
+    dispose: vi.fn().mockResolvedValue(undefined),
 });
 
 class QueueWithConfig extends InMemoryTaskQueue {
@@ -106,6 +108,7 @@ describe("ExpoWallet", () => {
         );
 
         await wallet.dispose();
+        expect(walletStub.dispose).toHaveBeenCalledTimes(1);
     });
 
     it("foreground polling runs tasks, acknowledges results, and reseeds", async () => {
@@ -157,6 +160,7 @@ describe("ExpoWallet", () => {
         );
 
         await wallet.dispose();
+        expect(walletStub.dispose).toHaveBeenCalledTimes(1);
         const callsBefore = runTasksMock.mock.calls.length;
         await vi.advanceTimersByTimeAsync(1_000);
         expect(runTasksMock).toHaveBeenCalledTimes(callsBefore);
@@ -199,6 +203,9 @@ describe("ExpoWallet", () => {
         await expect(wallet.getContractManager()).resolves.toEqual({
             id: "manager",
         });
+        await expect(wallet.getDelegatorManager()).resolves.toEqual({
+            id: "delegator",
+        });
         await expect(wallet.sendBitcoin({ amount: 1 } as any)).resolves.toBe(
             "send-txid"
         );
@@ -211,10 +218,12 @@ describe("ExpoWallet", () => {
         expect(walletStub.getBoardingUtxos).toHaveBeenCalledTimes(1);
         expect(walletStub.getTransactionHistory).toHaveBeenCalledTimes(1);
         expect(walletStub.getContractManager).toHaveBeenCalledTimes(1);
+        expect(walletStub.getDelegatorManager).toHaveBeenCalledTimes(1);
         expect(walletStub.sendBitcoin).toHaveBeenCalledWith({ amount: 1 });
         expect(walletStub.settle).toHaveBeenCalledTimes(1);
 
         await wallet.dispose();
+        expect(walletStub.dispose).toHaveBeenCalledTimes(1);
         expect(unregisterExpoBackgroundTaskMock).toHaveBeenCalledWith(
             "ark-delegation"
         );

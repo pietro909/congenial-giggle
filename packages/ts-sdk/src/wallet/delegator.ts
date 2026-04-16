@@ -1,8 +1,11 @@
 import { TransactionOutput } from "@scure/btc-signer/psbt";
 import {
     ArkAddress,
+    ArkInfo,
     ArkProvider,
+    Asset,
     decodeTapscript,
+    DelegateInfo,
     Estimator,
     ExtendedCoin,
     ExtendedVirtualCoin,
@@ -11,8 +14,10 @@ import {
     isRecoverable,
     MultisigTapscript,
     Outpoint,
+    Recipient,
     SignedIntent,
     Transaction,
+    VirtualCoin,
     VtxoScript,
 } from "..";
 import { DelegatorProvider } from "../providers/delegator";
@@ -21,9 +26,12 @@ import { scriptFromTapLeafScript } from "../script/base";
 import { buildForfeitTxWithOutput } from "../forfeit";
 import { Address, OutScript, SigHash } from "@scure/btc-signer";
 import { Bytes } from "@scure/btc-signer/utils";
+import { equalBytes } from "@scure/btc-signer/utils.js";
 import { getNetwork, NetworkName } from "../networks";
+import { createAssetPacket } from "./asset";
+import { Extension } from "../extension";
 
-export interface DelegatorManager {
+export interface IDelegatorManager {
     delegate(
         vtxos: ExtendedVirtualCoin[],
         destination: string,
@@ -32,14 +40,20 @@ export interface DelegatorManager {
         delegated: Outpoint[];
         failed: { outpoints: Outpoint[]; error: unknown }[];
     }>;
+
+    getDelegateInfo(): Promise<DelegateInfo>;
 }
 
-export class DelegatorManagerImpl implements DelegatorManager {
+export class DelegatorManagerImpl implements IDelegatorManager {
     constructor(
         readonly delegatorProvider: DelegatorProvider,
         readonly arkInfoProvider: Pick<ArkProvider, "getInfo">,
         readonly identity: Identity
     ) {}
+
+    async getDelegateInfo(): Promise<DelegateInfo> {
+        return this.delegatorProvider.getDelegateInfo();
+    }
 
     async delegate(
         vtxos: ExtendedVirtualCoin[],
@@ -55,13 +69,18 @@ export class DelegatorManagerImpl implements DelegatorManager {
 
         const destinationScript = ArkAddress.decode(destination).pkScript;
 
+        // fetch server and delegator info once, shared across all groups
+        const arkInfo = await this.arkInfoProvider.getInfo();
+        const delegateInfo = await this.delegatorProvider.getDelegateInfo();
+
         // if explicit delegateAt is provided, delegate all vtxos at once without sorting
         if (delegateAt) {
             try {
                 await delegate(
                     this.identity,
                     this.delegatorProvider,
-                    this.arkInfoProvider,
+                    arkInfo,
+                    delegateInfo,
                     vtxos,
                     destinationScript,
                     delegateAt
@@ -98,7 +117,8 @@ export class DelegatorManagerImpl implements DelegatorManager {
                 await delegate(
                     this.identity,
                     this.delegatorProvider,
-                    this.arkInfoProvider,
+                    arkInfo,
+                    delegateInfo,
                     recoverableVtxos,
                     destinationScript,
                     delegateAt
@@ -127,7 +147,8 @@ export class DelegatorManagerImpl implements DelegatorManager {
                 delegate(
                     this.identity,
                     this.delegatorProvider,
-                    this.arkInfoProvider,
+                    arkInfo,
+                    delegateInfo,
                     vtxosGroup,
                     destinationScript
                 )
@@ -162,7 +183,8 @@ export class DelegatorManagerImpl implements DelegatorManager {
 async function delegate(
     identity: Identity,
     delegatorProvider: DelegatorProvider,
-    arkInfoProvider: Pick<ArkProvider, "getInfo">,
+    arkInfo: ArkInfo,
+    delegateInfo: DelegateInfo,
     vtxos: ExtendedVirtualCoin[],
     destinationScript: Bytes,
     delegateAt?: Date
@@ -199,8 +221,7 @@ async function delegate(
             }
         }
     }
-    const { fees, dust, forfeitAddress, network } =
-        await arkInfoProvider.getInfo();
+    const { fees, dust, forfeitAddress, network } = arkInfo;
 
     const delegateAtSeconds = delegateAt.getTime() / 1000;
     const estimator = new Estimator({
@@ -232,8 +253,7 @@ async function delegate(
         }
         amount += BigInt(coin.value) - BigInt(inputFee.value);
     }
-    const { delegatorAddress, pubkey, fee } =
-        await delegatorProvider.getDelegateInfo();
+    const { delegatorAddress, pubkey, fee } = delegateInfo;
 
     const outputs = [];
     const delegatorFee = BigInt(Number(fee));
@@ -277,7 +297,8 @@ async function delegate(
         outputs,
         [],
         [pubkey],
-        delegateAtSeconds
+        delegateAtSeconds,
+        destinationScript
     );
 
     const forfeitOutputScript = OutScript.encode(
@@ -360,8 +381,61 @@ async function makeSignedDelegateIntent(
     outputs: TransactionOutput[],
     onchainOutputsIndexes: number[],
     cosignerPubKeys: string[],
-    validAt: number
+    validAt: number,
+    destinationScript: Bytes
 ): Promise<SignedIntent<Intent.RegisterMessage>> {
+    // if some of the inputs hold assets, build the asset packet and append as output
+    // in the intent proof tx, there is a "fake" input at index 0
+    // so the real coin indices are offset by +1
+    const assetInputs = new Map<number, Asset[]>();
+    for (let i = 0; i < coins.length; i++) {
+        if ("assets" in coins[i]) {
+            const assets = (coins[i] as unknown as VirtualCoin).assets;
+            if (assets && assets.length > 0) {
+                assetInputs.set(i + 1, assets);
+            }
+        }
+    }
+
+    let outputAssets: Asset[] | undefined;
+
+    const assetOutputIndex = findDestinationOutputIndex(
+        outputs,
+        destinationScript
+    );
+
+    if (assetInputs.size > 0) {
+        if (assetOutputIndex === -1) {
+            throw new Error(
+                "Cannot assign assets: no output matches the destination address"
+            );
+        }
+        // collect all input assets and assign them to the first offchain output
+        const allAssets = new Map<string, bigint>();
+        for (const [, assets] of assetInputs) {
+            for (const asset of assets) {
+                const existing = allAssets.get(asset.assetId) ?? 0n;
+                allAssets.set(asset.assetId, existing + BigInt(asset.amount));
+            }
+        }
+
+        outputAssets = [];
+        for (const [assetId, amount] of allAssets) {
+            outputAssets.push({ assetId, amount: Number(amount) });
+        }
+    }
+
+    const recipients: Recipient[] = outputs.map((output, i) => ({
+        address: "", // not needed for asset packet creation
+        amount: Number(output.amount),
+        assets: i === assetOutputIndex ? outputAssets : undefined,
+    }));
+
+    if (outputAssets && outputAssets.length > 0) {
+        const assetPacket = createAssetPacket(assetInputs, recipients);
+        outputs.push(Extension.create([assetPacket]).txOut());
+    }
+
     const message: Intent.RegisterMessage = {
         type: "register",
         onchain_output_indexes: onchainOutputsIndexes,
@@ -377,6 +451,19 @@ async function makeSignedDelegateIntent(
         proof: base64.encode(signedProof.toPSBT()),
         message,
     };
+}
+
+/**
+ * Finds the index of the output whose script matches the destination script.
+ * Returns -1 if no match is found.
+ */
+export function findDestinationOutputIndex(
+    outputs: TransactionOutput[],
+    destinationScript: Bytes
+): number {
+    return outputs.findIndex(
+        (o) => o.script && equalBytes(o.script, destinationScript)
+    );
 }
 
 function getDayTimestamp(timestamp: number): number {

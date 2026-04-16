@@ -7,21 +7,22 @@ import { Transaction } from "../utils/transaction";
 import { SignerSession, TreeSignerSession } from "../tree/signingSession";
 import { schnorr, signAsync } from "@noble/secp256k1";
 import {
-    defaultFactory,
-    scureBIP32 as BIP32,
+    HDKey,
+    expand,
     networks,
     scriptExpressions,
-} from "@kukks/bitcoin-descriptors";
-import type { Network } from "@kukks/bitcoin-descriptors";
-
-const { expand } = defaultFactory;
+    type Network,
+} from "@bitcoinerlab/descriptors-scure";
 
 const ALL_SIGHASH = Object.values(SigHash).filter((x) => typeof x === "number");
 
 /** Use default BIP86 derivation with network selection. */
 export interface NetworkOptions {
-    /** Mainnet (coin type 0) or testnet (coin type 1). */
-    isMainnet: boolean;
+    /**
+     * Mainnet (coin type 0) or testnet (coin type 1).
+     * @default true
+     */
+    isMainnet?: boolean;
 }
 
 /** Use a custom output descriptor for derivation. */
@@ -47,7 +48,9 @@ function detectNetwork(descriptor: string): Network {
     return descriptor.includes("tpub") ? networks.testnet : networks.bitcoin;
 }
 
-function hasDescriptor(opts: SeedIdentityOptions): opts is DescriptorOptions {
+function hasDescriptor(
+    opts: SeedIdentityOptions = {}
+): opts is DescriptorOptions {
     return "descriptor" in opts && typeof opts.descriptor === "string";
 }
 
@@ -57,7 +60,7 @@ function hasDescriptor(opts: SeedIdentityOptions): opts is DescriptorOptions {
  */
 function buildDescriptor(seed: Uint8Array, isMainnet: boolean): string {
     const network = isMainnet ? networks.bitcoin : networks.testnet;
-    const masterNode = BIP32.fromSeed(seed, network);
+    const masterNode = HDKey.fromMasterSeed(seed, network.bip32);
     return scriptExpressions.trBIP32({
         masterNode,
         network,
@@ -118,9 +121,9 @@ export class SeedIdentity implements Identity {
         }
 
         // Verify the xpub in the descriptor matches our seed
-        const masterNode = BIP32.fromSeed(seed, network);
-        const accountNode = masterNode.derivePath(`m${keyInfo.originPath}`);
-        if (accountNode.neutered().toBase58() !== keyInfo.bip32?.toBase58()) {
+        const masterNode = HDKey.fromMasterSeed(seed, network.bip32);
+        const accountNode = masterNode.derive(`m${keyInfo.originPath}`);
+        if (accountNode.publicExtendedKey !== keyInfo.bip32?.toBase58()) {
             throw new Error(
                 "xpub mismatch: derived key does not match descriptor"
             );
@@ -130,7 +133,7 @@ export class SeedIdentity implements Identity {
         if (!keyInfo.path) {
             throw new Error("Descriptor must specify a full derivation path");
         }
-        const derivedNode = masterNode.derivePath(keyInfo.path);
+        const derivedNode = masterNode.derive(keyInfo.path);
         if (!derivedNode.privateKey) {
             throw new Error("Failed to derive private key");
         }
@@ -146,10 +149,13 @@ export class SeedIdentity implements Identity {
      * @param seed - 64-byte seed (typically from mnemonicToSeedSync)
      * @param opts - Network selection or custom descriptor.
      */
-    static fromSeed(seed: Uint8Array, opts: SeedIdentityOptions): SeedIdentity {
+    static fromSeed(
+        seed: Uint8Array,
+        opts: SeedIdentityOptions = {}
+    ): SeedIdentity {
         const descriptor = hasDescriptor(opts)
             ? opts.descriptor
-            : buildDescriptor(seed, (opts as NetworkOptions).isMainnet);
+            : buildDescriptor(seed, (opts as NetworkOptions).isMainnet ?? true);
         return new SeedIdentity(seed, descriptor);
     }
 
@@ -245,7 +251,7 @@ export class MnemonicIdentity extends SeedIdentity {
      */
     static fromMnemonic(
         phrase: string,
-        opts: MnemonicOptions
+        opts: MnemonicOptions = {}
     ): MnemonicIdentity {
         if (!validateMnemonic(phrase, wordlist)) {
             throw new Error("Invalid mnemonic");
@@ -254,7 +260,7 @@ export class MnemonicIdentity extends SeedIdentity {
         const seed = mnemonicToSeedSync(phrase, passphrase);
         const descriptor = hasDescriptor(opts)
             ? opts.descriptor
-            : buildDescriptor(seed, (opts as NetworkOptions).isMainnet);
+            : buildDescriptor(seed, (opts as NetworkOptions).isMainnet ?? true);
         return new MnemonicIdentity(seed, descriptor);
     }
 }

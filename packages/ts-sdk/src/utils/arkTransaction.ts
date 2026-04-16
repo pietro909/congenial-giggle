@@ -20,6 +20,7 @@ import { CSVMultisigTapscript } from "../script/tapscript";
 import { setArkPsbtField, VtxoTaprootTree } from "./unknownFields";
 import { Transaction } from "./transaction";
 import { ArkAddress } from "../script/address";
+import { Extension } from "../extension";
 
 export type ArkTxInput = {
     // the script used to spend the vtxo
@@ -49,13 +50,28 @@ export function buildOffchainTx(
     outputs: TransactionOutput[],
     serverUnrollScript: CSVMultisigTapscript.Type
 ): OffchainTx {
-    let hasOpReturn = false;
+    // TODO: use arkd /info
+    const MAX_OP_RETURN = 2;
+
+    let countOpReturn = 0;
+    let hasExtensionOutput = false;
     for (const [index, output] of outputs.entries()) {
         if (!output.script) throw new Error(`missing output script ${index}`);
-        const isOpReturn = Script.decode(output.script)[0] === "RETURN";
-        if (!isOpReturn) continue;
-        if (hasOpReturn) throw new Error("multiple OP_RETURN outputs");
-        hasOpReturn = true;
+        const isExtension = Extension.isExtension(output.script);
+        const isOpReturn =
+            isExtension || Script.decode(output.script)[0] === "RETURN";
+        if (isOpReturn) {
+            countOpReturn++;
+        }
+        if (!isExtension) continue;
+        if (hasExtensionOutput) throw new Error("multiple extension outputs");
+        hasExtensionOutput = true;
+    }
+
+    if (countOpReturn > MAX_OP_RETURN) {
+        throw new Error(
+            `too many OP_RETURN outputs: ${countOpReturn} > ${MAX_OP_RETURN}`
+        );
     }
 
     const checkpoints = inputs.map((input) =>
@@ -180,11 +196,20 @@ function isSeconds(locktime: bigint): boolean {
 
 export function hasBoardingTxExpired(
     coin: ExtendedCoin,
-    boardingTimelock: RelativeTimelock
+    boardingTimelock: RelativeTimelock,
+    chainTipHeight?: number
 ) {
     if (!coin.status.block_time) return false;
     if (boardingTimelock.value === 0n) return true;
-    if (boardingTimelock.type === "blocks") return false; // TODO: handle get chain tip
+
+    if (boardingTimelock.type === "blocks") {
+        if (chainTipHeight === undefined || !coin.status.block_height)
+            return false;
+        return (
+            BigInt(chainTipHeight - coin.status.block_height) >=
+            boardingTimelock.value
+        );
+    }
 
     // validate expiry in terms of seconds
     const now = BigInt(Math.floor(Date.now() / 1000));

@@ -1,4 +1,3 @@
-import { hex } from "@scure/base";
 import {
     Wallet,
     SingleKey,
@@ -6,17 +5,31 @@ import {
     Identity,
     OnchainWallet,
     EsploraProvider,
-    RestIndexerProvider,
-    ArkAddress,
     IntentFeeConfig,
+    InMemoryWalletRepository,
+    InMemoryContractRepository,
 } from "../../src";
 import { execSync } from "child_process";
 import { RestDelegatorProvider } from "../../src/providers/delegator";
 import { generateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 
-export const arkdExec =
-    process.env.ARK_ENV === "docker" ? "docker exec -t arkd" : "nigiri";
+export const arkdExec = "docker exec -t arkd";
+
+let arkCliInitialized = false;
+
+function ensureArkCliInitialized(): void {
+    if (arkCliInitialized) return;
+    try {
+        execSync(
+            `${arkdExec} ark init --password secret --server-url localhost:7070 --explorer http://chopsticks:3000`,
+            { stdio: "pipe" }
+        );
+    } catch {
+        // already initialized — ignore
+    }
+    arkCliInitialized = true;
+}
 
 export interface TestArkWallet {
     wallet: Wallet;
@@ -29,8 +42,15 @@ export interface TestOnchainWallet {
 }
 
 export function execCommand(command: string): string {
-    command += " | grep -v WARN";
-    const result = execSync(command).toString().trim();
+    const result = execSync(command, { encoding: "utf8" })
+        .replace(/\r/g, "")
+        .split("\n")
+        .filter((line) => !line.includes("WARN"))
+        .join("\n")
+        .trim();
+    if (result.startsWith("error:")) {
+        throw new Error(result);
+    }
     return result;
 }
 
@@ -57,6 +77,11 @@ export async function createTestArkWallet(): Promise<TestArkWallet> {
             forcePolling: true,
             pollingInterval: 2000,
         }),
+        storage: {
+            walletRepository: new InMemoryWalletRepository(),
+            contractRepository: new InMemoryContractRepository(),
+        },
+        settlementConfig: false,
     });
 
     return {
@@ -75,7 +100,12 @@ export async function createTestArkWalletWithDelegate(): Promise<TestArkWallet> 
             forcePolling: true,
             pollingInterval: 2000,
         }),
-        delegatorProvider: new RestDelegatorProvider("http://localhost:7002"),
+        storage: {
+            walletRepository: new InMemoryWalletRepository(),
+            contractRepository: new InMemoryContractRepository(),
+        },
+        delegatorProvider: new RestDelegatorProvider("http://localhost:7012"),
+        settlementConfig: false,
     });
 
     return {
@@ -97,6 +127,11 @@ export async function createTestArkWalletWithMnemonic(): Promise<TestArkWallet> 
             forcePolling: true,
             pollingInterval: 2000,
         }),
+        storage: {
+            walletRepository: new InMemoryWalletRepository(),
+            contractRepository: new InMemoryContractRepository(),
+        },
+        settlementConfig: false,
     });
 
     return {
@@ -146,30 +181,13 @@ export async function createVtxo(
     return settleTxid;
 }
 
-// before each test check if the ark's cli running in the test env has at least 20_000 offchain balance
-// if not, fund it with 100.000
+// before each test, ensure the faucet wallet has fresh spendable VTXOs.
+// After rounds, existing VTXOs can become stale (balance shows them but
+// ark send can't spend them), so we always redeem a fresh note.
 export async function beforeEachFaucet(): Promise<void> {
-    const receiveOutput = execCommand(`${arkdExec} ark receive`);
-    const receive = JSON.parse(receiveOutput);
-    const receiveAddress = receive.offchain_address;
-
-    const { vtxos } = await new RestIndexerProvider(
-        "http://localhost:7070"
-    ).getVtxos({
-        scripts: [hex.encode(ArkAddress.decode(receiveAddress).pkScript)],
-        spendableOnly: true,
-    });
-    const offchainBalance = vtxos.reduce(
-        (sum: number, vtxo) => sum + vtxo.value,
-        0
-    );
-
-    if (offchainBalance <= 20_000) {
-        const noteStr = execCommand(`${arkdExec} arkd note --amount 100000`);
-        execCommand(
-            `${arkdExec} ark redeem-notes -n ${noteStr} --password secret`
-        );
-    }
+    ensureArkCliInitialized();
+    const noteStr = execCommand(`${arkdExec} arkd note --amount 200000`);
+    execCommand(`${arkdExec} ark redeem-notes -n ${noteStr} --password secret`);
 }
 
 export function setFees(fees: IntentFeeConfig): void {

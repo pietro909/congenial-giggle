@@ -1,11 +1,22 @@
-import { defineConfig, mergeConfig } from "vitest/config";
-import base from "../../config/vitest.base";
+import { defineConfig } from "vitest/config";
 
-export default defineConfig(
-    mergeConfig(base, {
-        test: {
-            fileParallelism: false,
-            setupFiles: ["./test/polyfill.js"],
+export default defineConfig({
+    test: {
+        globals: true,
+        environment: "node",
+        fileParallelism: false,
+        reporters: ["verbose"],
+        setupFiles: ["./test/polyfill.js"],
+        coverage: {
+            provider: "v8",
+            reporter: ["text", "html"],
+            exclude: [
+                "node_modules/**",
+                "dist/**",
+                "**/*.test.ts",
+                "**/*.spec.ts",
+                "**/__tests__/**",
+            ],
         },
-    }),
-);
+    },
+});
